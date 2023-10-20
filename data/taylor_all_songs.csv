@@ -1,0 +1,2 @@
+"album_name","ep","album_release","track_number","track_name","artist","featuring","bonus_track","promotional_release","single_release","track_release","danceability","energy","key","loudness","mode","speechiness","acousticness","instrumentalness","liveness","valence","tempo","time_signature","duration_ms","explicit","key_name","mode_name","key_mode","lyrics"
+"Taylor Swift",FALSE,2006-10-24,1,"Tim McGraw","Taylor Swift",NA,FALSE,NA,2006-06-19,2006-06-19,0.58,0.491,0,-6.462,1,0.0251,0.575,0,0.121,0.425,76.009,4,232107,FALSE,"C","major","C major",
