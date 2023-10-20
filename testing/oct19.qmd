@@ -1,0 +1,301 @@
+songs <- taylor_album_songs
+
+```{r}
+library("tidyverse")
+load(here::here("data/taylor_all_songs.rda"))
+taylorS <- data.frame(taylor_all_songs)
+saveRDS(taylorS, here::here("data/taylor.rds"))
+
+```
+
+```{r}
+missing_data_summary <- taylor %>%
+  summarise_all(~sum(is.na(.)))
+```
+
+```{r}
+# Replace NA in 'featuring' with "None"
+taylor$featuring[is.na(taylor$featuring)] <- "None"
+
+# Replace NA in numerical columns with their respective medians
+numerical_cols <- c("danceability", "energy", "key", "loudness", "mode", "speechiness", 
+                    "acousticness", "instrumentalness", "liveness", "valence", "tempo", "time_signature")
+for (col in numerical_cols) {
+  taylor[[col]][is.na(taylor[[col]])] <- median(taylor[[col]], na.rm = TRUE)
+}
+
+# Standardize the numerical features
+taylor[numerical_cols] <- scale(taylor[numerical_cols])
+
+```
+
+
+```{r}
+# Load necessary libraries
+library(factoextra)
+
+# Select the numerical columns for clustering
+taylor_clustering_data <- taylor[numerical_cols]
+
+# Compute and plot wss for k = 1 to k = 10
+set.seed(123)  # Setting seed to reproduce results
+wss <- sapply(1:10, function(k) {
+  kmeans(taylor_clustering_data, centers=k, nstart=50)$tot.withinss
+})
+
+# Plot the Elbow Method
+elbow <- plot(1:10, wss, type="b", pch=19, frame=FALSE, 
+     xlab="Number of clusters K", 
+     ylab="Total within-clusters sum of squares")
+```
+
+```{r}
+# Set a random seed for reproducibility
+set.seed(123)
+
+# Apply k-means clustering
+kmeans_result <- kmeans(taylor_clustering_data, centers=4, nstart=50)
+
+# Attach the cluster assignments back to the original data
+taylor$cluster <- kmeans_result$cluster
+
+# Examine the size of each cluster
+cluster_sizes <- table(taylor$cluster)
+
+# Examine the centroids of each cluster
+cluster_centroids <- as.data.frame(kmeans_result$centers)
+
+list(cluster_sizes, cluster_centroids)
+
+```
+
+```{r}
+# Sample songs from each cluster, considering cluster sizes
+sampled_songs <- taylor %>% 
+  group_by(cluster) %>% 
+  sample_n(min(5, n())) %>%  # Take all songs if cluster size < 5, otherwise sample 5
+  select(album_name, track_name, cluster)
+
+```
+
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+
+# Perform PCA
+pca_result <- prcomp(taylor_clustering_data, center = TRUE, scale. = TRUE)
+pca_data <- as.data.frame(pca_result$x[,1:2])  # Take the first two principal components
+pca_data$cluster <- taylor$cluster
+
+# Plot the clusters
+clusters <- ggplot(pca_data, aes(x=PC1, y=PC2, color=factor(cluster))) +
+  geom_point(alpha=0.6, size=3) +
+  theme_minimal() +
+  labs(color="Cluster", title="PCA Plot of Song Clusters", x="Principal Component 1", y="Principal Component 2")
+
+```
+
+
+```{r}
+# Count songs from each album in each cluster
+album_cluster_distribution <- taylor %>% 
+  group_by(album_name, cluster) %>% 
+  summarise(count = n()) %>% 
+  arrange(album_name, cluster)
+
+
+```
+
+```{r}
+# Compute median values of song attributes for each cluster
+cluster_attributes_median <- taylor %>% 
+  group_by(cluster) %>% 
+  summarise(
+    median_danceability = median(danceability, na.rm = TRUE),
+    median_energy = median(energy, na.rm = TRUE),
+    median_acousticness = median(acousticness, na.rm = TRUE),
+    median_loudness = median(loudness, na.rm = TRUE),
+    median_speechiness = median(speechiness, na.rm = TRUE),
+    median_valence = median(valence, na.rm = TRUE),
+    median_tempo = median(tempo, na.rm = TRUE)
+  )
+
+```
+
+
+```{r}
+# Load necessary libraries
+install.packages(c("fmsb", "viridis"))
+library(fmsb)
+library(viridis)
+
+# Prepare data for the radar plot
+# Add max and min values for each attribute for the axis scaling
+attributes_max <- apply(taylor[numerical_cols], 2, max)
+attributes_min <- apply(taylor[numerical_cols], 2, min)
+
+cluster_attributes_median <- rbind(attributes_max, attributes_min, as.data.frame(cluster_attributes_median))
+
+# Create the radar plot
+colors <- viridis(4)
+radar_chart <- radarchart(cluster_attributes_median, 
+                          pcol = colors,
+                          plwd = 2,
+                          plty = 1,
+                          pty = 32,
+                          title = "Musical Attributes by Cluster")
+
+```
+
+```{r}
+# Calculate the total number of songs in Cluster 1 for each album
+album_cluster_count <- album_cluster_count %>%
+  mutate(total_cluster_1 = `1` + `2` + `3` + `4`)
+
+# Sort the dataframe by the total number of songs in Cluster 1 in descending order
+album_cluster_count <- album_cluster_count %>%
+  arrange(desc(total_cluster_1))
+
+# Create the stacked bar chart
+cluster_distr <- ggplot(album_cluster_count, aes(x = album_name)) + 
+  geom_bar(aes(y = `1`, fill = "Cluster 1"), stat = "identity") +
+  geom_bar(aes(y = `2`, fill = "Cluster 2"), stat = "identity", position = "stack") +
+  geom_bar(aes(y = `3`, fill = "Cluster 3"), stat = "identity", position = "stack") +
+  geom_bar(aes(y = `4`, fill = "Cluster 4"), stat = "identity", position = "stack") +
+  labs(y = "Number of Songs", x = "Album", fill = "Cluster", title = "Distribution of Songs from Each Album Across Clusters") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for better readability
+
+cluster_distr
+
+
+
+
+
+```
+
+```{r}
+# Sample 4 songs from each cluster
+random_four_songs <- taylor %>% 
+  group_by(cluster) %>% 
+  sample_n(min(4, n())) %>%  # Take all songs if cluster size < 4, otherwise sample 4
+  select(album_name, track_name, cluster)
+
+```
+
+```{r}
+# Load necessary libraries
+install.packages(c("tidytext", "dplyr", "stringr"))
+library(tidytext)
+library(tidyr)
+library(dplyr)
+library(stringr)
+
+
+# Unnest the lyrics into a flat format
+tidy_lyrics <- taylor %>%
+  select(cluster, track_name, lyrics) %>%
+  unnest(lyrics) %>%  # Flatten the list column
+  unnest_tokens(word, lyric) %>%  # Tokenize the lyric lines
+  anti_join(stop_words)  # Remove stop words
+
+# Compute term frequency for each cluster
+term_frequency <- tidy_lyrics %>%
+  count(cluster, word, sort = TRUE) %>%
+  group_by(cluster) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  arrange(cluster, desc(n))
+```
+
+
+```{r}
+# Use the bing lexicon to determine sentiment scores
+lyric_sentiment <- tidy_lyrics %>%
+  inner_join(get_sentiments("bing")) %>%
+  group_by(cluster, track_name) %>%
+  summarise(sentiment_score = sum(ifelse(sentiment == "positive", 1, -1))) %>%
+  ungroup()
+
+# Compute average sentiment for each cluster
+cluster_sentiment <- lyric_sentiment %>%
+  group_by(cluster) %>%
+  summarise(avg_sentiment = mean(sentiment_score))
+
+```
+
+```{r}
+# Extract lyrics and unnest them into a flat format
+tidy_lyrics_original <- taylor %>%
+  select(cluster, track_name, lyrics) %>%
+  unnest(cols = c(lyrics))
+
+# Extract bigrams from the lyrics
+bigrams <- tidy_lyrics_original %>%
+  unnest_tokens(bigram, lyric, token = "ngrams", n = 2)
+
+# Compute bigram frequencies for each cluster
+bigram_frequency <- bigrams %>%
+  count(cluster, bigram, sort = TRUE) %>%
+  group_by(cluster) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  arrange(cluster, desc(n))
+
+# Save bigram_frequency as a CSV file
+write.csv(bigram_frequency, "bigram_frequency.csv", row.names = FALSE)
+```
+
+### Classification Models
+
+```{r, warning = FALSE}
+# Create numeric codes for mood labels
+mood_codes <- c("Happy/Energetic" = 1, "Uplifting/Instrumental" = 2, "Sad/Emotional" = 3, "Other" = 4)
+taylor$Mood <- mood_codes[taylor$Mood]
+
+# Check the distribution of mood labels
+table(taylor$Mood)
+
+# Data Splitting
+set.seed(123)  # For reproducibility
+train_indices <- sample(1:nrow(taylor), 0.7 * nrow(taylor))
+train_data <- taylor[train_indices, ]
+test_data <- taylor[-train_indices, ]
+
+# Model Selection (Random Forest)
+library(randomForest)
+
+# Train the Random Forest model for classification
+rf_model <- randomForest(Mood ~ danceability + energy + acousticness + instrumentalness + valence, data = train_data)
+
+# Model Evaluation
+library(caret)
+predictions <- predict(rf_model, test_data)
+confusionMatrix(predictions, test_data$Mood)
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
